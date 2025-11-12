@@ -6,6 +6,7 @@ import PersonaSelector from '@/components/PersonaSelector';
 import MetricsPanel from '@/components/MetricsPanel';
 import ResultsGrid from '@/components/ResultsGrid';
 import InsightsPanel from '@/components/InsightsPanel';
+import VisualizationsPanel from '@/components/VisualizationsPanel';
 import {
   Persona,
   BrubbleAnalysis,
@@ -164,6 +165,11 @@ export default function Home() {
                 metrics={analysis.metrics}
                 personas={analysis.personas}
               />
+            )}
+
+            {/* Visualizations */}
+            {analysis.visualization_data && (
+              <VisualizationsPanel visualizationData={analysis.visualization_data} />
             )}
 
             {/* Results grid */}

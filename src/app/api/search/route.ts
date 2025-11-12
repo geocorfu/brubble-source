@@ -865,6 +865,234 @@ function generateInsights(
   return insights;
 }
 
+// Generate Venn diagram data showing overlaps between persona results
+function generateVennDiagramData(personaResults: PersonaResults[]): any {
+  if (personaResults.length < 2) return null;
+
+  const sets: any[] = [];
+  const overlaps: any[] = [];
+
+  // Create sets for each persona
+  personaResults.forEach((pr, index) => {
+    sets.push({
+      id: pr.persona.id,
+      label: pr.persona.name,
+      size: pr.results.length,
+      color: pr.persona.color,
+    });
+  });
+
+  // Calculate overlaps between all pairs
+  for (let i = 0; i < personaResults.length; i++) {
+    for (let j = i + 1; j < personaResults.length; j++) {
+      const resultsA = personaResults[i].results;
+      const resultsB = personaResults[j].results;
+
+      // Find common URLs
+      const commonUrls = resultsA.filter((rA) =>
+        resultsB.some((rB) => rB.url === rA.url || rB.title === rA.title)
+      );
+
+      overlaps.push({
+        sets: [personaResults[i].persona.id, personaResults[j].persona.id],
+        size: commonUrls.length,
+        items: commonUrls.map((r) => ({ title: r.title, url: r.url })),
+      });
+    }
+  }
+
+  // Calculate three-way overlaps if there are 3+ personas
+  if (personaResults.length >= 3) {
+    for (let i = 0; i < personaResults.length; i++) {
+      for (let j = i + 1; j < personaResults.length; j++) {
+        for (let k = j + 1; k < personaResults.length; k++) {
+          const resultsA = personaResults[i].results;
+          const resultsB = personaResults[j].results;
+          const resultsC = personaResults[k].results;
+
+          const commonUrls = resultsA.filter(
+            (rA) =>
+              resultsB.some((rB) => rB.url === rA.url) &&
+              resultsC.some((rC) => rC.url === rA.url)
+          );
+
+          if (commonUrls.length > 0) {
+            overlaps.push({
+              sets: [
+                personaResults[i].persona.id,
+                personaResults[j].persona.id,
+                personaResults[k].persona.id,
+              ],
+              size: commonUrls.length,
+              items: commonUrls.map((r) => ({ title: r.title, url: r.url })),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return { sets, overlaps };
+}
+
+// Generate sentiment map data for visualization
+function generateSentimentMapData(personaResults: PersonaResults[]): any {
+  const sentimentData = personaResults.map((pr) => {
+    // Group results by sentiment ranges
+    const positive = pr.results.filter((r) => (r.sentiment || 0) > 0.3).length;
+    const neutral = pr.results.filter(
+      (r) => (r.sentiment || 0) >= -0.3 && (r.sentiment || 0) <= 0.3
+    ).length;
+    const negative = pr.results.filter((r) => (r.sentiment || 0) < -0.3).length;
+
+    // Calculate sentiment distribution by platform
+    const platformSentiment: Record<string, { positive: number; neutral: number; negative: number }> = {};
+    pr.results.forEach((result) => {
+      if (!platformSentiment[result.platform]) {
+        platformSentiment[result.platform] = { positive: 0, neutral: 0, negative: 0 };
+      }
+      const sentiment = result.sentiment || 0;
+      if (sentiment > 0.3) platformSentiment[result.platform].positive++;
+      else if (sentiment < -0.3) platformSentiment[result.platform].negative++;
+      else platformSentiment[result.platform].neutral++;
+    });
+
+    return {
+      persona: {
+        id: pr.persona.id,
+        name: pr.persona.name,
+        color: pr.persona.color,
+      },
+      avgSentiment: pr.summary_stats.avg_sentiment,
+      distribution: {
+        positive,
+        neutral,
+        negative,
+      },
+      platformSentiment,
+      sentimentRange: {
+        min: Math.min(...pr.results.map((r) => r.sentiment || 0)),
+        max: Math.max(...pr.results.map((r) => r.sentiment || 0)),
+      },
+    };
+  });
+
+  return { personas: sentimentData };
+}
+
+// Generate word cloud data from result titles and snippets
+function generateWordCloudData(personaResults: PersonaResults[]): any {
+  // Common stop words to exclude
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+    'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
+    'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+    'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i',
+    'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'when',
+    'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more',
+    'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own',
+    'same', 'so', 'than', 'too', 'very', 'just', 'about', 's', 't',
+  ]);
+
+  const wordClouds = personaResults.map((pr) => {
+    // Combine all text from titles and snippets
+    const allText = pr.results
+      .map((r) => `${r.title} ${r.snippet}`)
+      .join(' ')
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' '); // Remove punctuation
+
+    // Count word frequencies
+    const wordCount: Record<string, number> = {};
+    allText.split(/\s+/).forEach((word) => {
+      if (word.length > 3 && !stopWords.has(word)) {
+        wordCount[word] = (wordCount[word] || 0) + 1;
+      }
+    });
+
+    // Convert to array and sort by frequency
+    const words = Object.entries(wordCount)
+      .map(([text, value]) => ({ text, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 50); // Top 50 words
+
+    return {
+      persona: {
+        id: pr.persona.id,
+        name: pr.persona.name,
+        color: pr.persona.color,
+      },
+      words,
+    };
+  });
+
+  return { clouds: wordClouds };
+}
+
+// Generate timeline data showing when results were published
+function generateTimelineData(personaResults: PersonaResults[]): any {
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const timelineData = personaResults.map((pr) => {
+    // Group results by time periods
+    const lastDay = pr.results.filter((r) => r.timestamp && r.timestamp >= oneDayAgo).length;
+    const lastWeek = pr.results.filter(
+      (r) => r.timestamp && r.timestamp >= oneWeekAgo && r.timestamp < oneDayAgo
+    ).length;
+    const lastMonth = pr.results.filter(
+      (r) => r.timestamp && r.timestamp >= oneMonthAgo && r.timestamp < oneWeekAgo
+    ).length;
+    const older = pr.results.filter((r) => r.timestamp && r.timestamp < oneMonthAgo).length;
+
+    // Group by hour for recent results (last 24 hours)
+    const hourlyData: Record<string, number> = {};
+    pr.results
+      .filter((r) => r.timestamp && r.timestamp >= oneDayAgo)
+      .forEach((result) => {
+        if (result.timestamp) {
+          const hour = result.timestamp.getHours();
+          const key = `${hour}:00`;
+          hourlyData[key] = (hourlyData[key] || 0) + 1;
+        }
+      });
+
+    // Create sorted hourly distribution
+    const hourlyDistribution = Object.entries(hourlyData)
+      .map(([hour, count]) => ({ hour, count }))
+      .sort((a, b) => parseInt(a.hour) - parseInt(b.hour));
+
+    return {
+      persona: {
+        id: pr.persona.id,
+        name: pr.persona.name,
+        color: pr.persona.color,
+      },
+      periods: {
+        lastDay,
+        lastWeek,
+        lastMonth,
+        older,
+      },
+      hourlyDistribution,
+      oldestResult: pr.results.reduce((oldest, r) => {
+        if (!r.timestamp) return oldest;
+        if (!oldest || r.timestamp < oldest) return r.timestamp;
+        return oldest;
+      }, null as Date | null),
+      newestResult: pr.results.reduce((newest, r) => {
+        if (!r.timestamp) return newest;
+        if (!newest || r.timestamp > newest) return r.timestamp;
+        return newest;
+      }, null as Date | null),
+    };
+  });
+
+  return { timelines: timelineData };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -929,6 +1157,14 @@ export async function POST(request: NextRequest) {
     // Generate insights
     const insights = generateInsights(metrics, personas);
 
+    // Generate visualization data
+    const visualizationData = {
+      venn_diagram: generateVennDiagramData(personaResults),
+      sentiment_map: generateSentimentMapData(personaResults),
+      word_clouds: generateWordCloudData(personaResults),
+      timeline: generateTimelineData(personaResults),
+    };
+
     // Build the analysis response
     const analysis: BrubbleAnalysis = {
       query,
@@ -937,12 +1173,7 @@ export async function POST(request: NextRequest) {
       results: personaResults,
       metrics,
       insights,
-      visualization_data: {
-        venn_diagram: null,
-        sentiment_map: null,
-        word_clouds: null,
-        timeline: null,
-      },
+      visualization_data: visualizationData,
     };
 
     return NextResponse.json(analysis);
