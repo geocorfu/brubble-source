@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import Parser from 'rss-parser';
 import {
   Persona,
   BrubbleAnalysis,
@@ -7,9 +8,9 @@ import {
   ComparisonMetrics,
 } from '@/types';
 
-// NewsAPI integration
-const NEWSAPI_KEY = process.env.NEWSAPI_KEY || 'demo';
-const NEWSAPI_BASE_URL = 'https://newsapi.org/v2';
+// The Guardian API integration (generous free tier: 500 req/day)
+const GUARDIAN_API_KEY = process.env.GUARDIAN_API_KEY || '';
+const GUARDIAN_BASE_URL = 'https://content.guardianapis.com/search';
 
 // YouTube Data API integration
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
@@ -29,20 +30,55 @@ const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
 const GOOGLE_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID || '';
 const GOOGLE_BASE_URL = 'https://www.googleapis.com/customsearch/v1';
 
-interface NewsAPIArticle {
-  title: string;
-  description: string;
-  url: string;
-  source: {
-    name: string;
+// RSS Feed sources organized by political leaning
+const RSS_FEEDS = {
+  progressive: [
+    'https://www.theguardian.com/us-news/rss',
+    'https://www.npr.org/rss/rss.php?id=1001',
+    'https://www.democracynow.org/democracynow.rss',
+  ],
+  conservative: [
+    'https://www.foxnews.com/rss',
+    'https://www.wsj.com/xml/rss/3_7085.xml',
+    'https://nypost.com/feed/',
+  ],
+  centrist: [
+    'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml',
+    'https://feeds.bbci.co.uk/news/rss.xml',
+    'https://www.reuters.com/rssFeed/topNews',
+  ],
+  general: [
+    'https://news.google.com/rss',
+    'https://www.theguardian.com/world/rss',
+    'https://feeds.bbci.co.uk/news/world/rss.xml',
+  ],
+};
+
+// Initialize RSS parser
+const rssParser = new Parser({
+  timeout: 5000,
+  headers: {
+    'User-Agent': 'Brubble/1.0',
+  },
+});
+
+interface GuardianArticle {
+  id: string;
+  webTitle: string;
+  webUrl: string;
+  webPublicationDate: string;
+  sectionName: string;
+  fields?: {
+    bodyText?: string;
+    trailText?: string;
   };
-  publishedAt: string;
 }
 
-interface NewsAPIResponse {
-  status: string;
-  totalResults: number;
-  articles: NewsAPIArticle[];
+interface GuardianResponse {
+  response: {
+    status: string;
+    results: GuardianArticle[];
+  };
 }
 
 interface YouTubeVideo {
@@ -123,51 +159,82 @@ interface GoogleSearchResponse {
   };
 }
 
-// Fetch news from NewsAPI
-async function fetchNewsForPersona(
+// Fetch news from RSS feeds based on persona
+async function fetchRSSNews(
   query: string,
   persona: Persona
 ): Promise<SearchResult[]> {
+  const results: SearchResult[] = [];
+
+  // Select feeds based on political leaning
+  let feedUrls: string[] = RSS_FEEDS.general;
+
+  if (persona.category === 'political') {
+    const leaning = persona.attributes.political_leaning;
+    if (leaning === 'progressive') {
+      feedUrls = RSS_FEEDS.progressive;
+    } else if (leaning === 'conservative') {
+      feedUrls = RSS_FEEDS.conservative;
+    } else {
+      feedUrls = RSS_FEEDS.centrist;
+    }
+  }
+
+  // Fetch from selected feeds
+  const feedPromises = feedUrls.map(async (feedUrl) => {
+    try {
+      const feed = await rssParser.parseURL(feedUrl);
+      const queryLower = query.toLowerCase();
+
+      // Filter items that match the query
+      const matchingItems = feed.items
+        .filter((item) => {
+          const title = item.title?.toLowerCase() || '';
+          const content = item.contentSnippet?.toLowerCase() || '';
+          return title.includes(queryLower) || content.includes(queryLower);
+        })
+        .slice(0, 5); // Limit to 5 items per feed
+
+      return matchingItems.map((item) => ({
+        title: item.title || 'Untitled',
+        url: item.link || '',
+        snippet: item.contentSnippet || item.content?.substring(0, 300) || '',
+        source: feed.title || 'RSS Feed',
+        timestamp: item.pubDate ? new Date(item.pubDate) : new Date(),
+        sentiment: calculateSentiment(item.title + ' ' + item.contentSnippet, persona),
+        relevance_score: calculateRelevance(item.title + ' ' + item.contentSnippet, query),
+        platform: 'news' as const,
+      }));
+    } catch (error) {
+      console.error(`Error fetching RSS feed ${feedUrl}:`, error);
+      return [];
+    }
+  });
+
+  const feedResults = await Promise.all(feedPromises);
+  return feedResults.flat();
+}
+
+// Fetch news from The Guardian API
+async function fetchGuardianNews(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  if (!GUARDIAN_API_KEY) {
+    console.log('Guardian API key not configured, skipping Guardian results');
+    return [];
+  }
+
   try {
-    // Build query parameters based on persona attributes
-    let searchQuery = query;
-    let category = '';
-    let language = 'en';
-    let country = '';
-
-    // Adjust search based on persona
-    if (persona.category === 'political') {
-      if (persona.attributes.political_leaning === 'progressive') {
-        searchQuery += ' sustainability climate justice equality';
-      } else if (persona.attributes.political_leaning === 'conservative') {
-        searchQuery += ' traditional values security economy';
-      } else {
-        searchQuery += ' balanced moderate policy';
-      }
-    }
-
-    if (persona.category === 'geographic') {
-      if (persona.attributes.location?.includes('US')) {
-        country = 'us';
-      } else if (persona.attributes.location?.includes('Europe')) {
-        country = 'gb'; // UK as proxy for European news
-      }
-    }
-
-    // Construct API URL
     const params = new URLSearchParams({
-      q: searchQuery,
-      apiKey: NEWSAPI_KEY,
-      pageSize: '10',
-      sortBy: 'relevancy',
-      language,
+      q: query,
+      'api-key': GUARDIAN_API_KEY,
+      'page-size': '10',
+      'show-fields': 'trailText,bodyText',
+      'order-by': 'relevance',
     });
 
-    if (country) {
-      params.append('country', country);
-    }
-
-    const url = `${NEWSAPI_BASE_URL}/everything?${params.toString()}`;
+    const url = `${GUARDIAN_BASE_URL}?${params.toString()}`;
 
     const response = await fetch(url, {
       headers: {
@@ -176,28 +243,89 @@ async function fetchNewsForPersona(
     });
 
     if (!response.ok) {
-      console.error(`NewsAPI error: ${response.status} ${response.statusText}`);
-      return generateMockResults(query, persona);
+      console.error(`Guardian API error: ${response.status} ${response.statusText}`);
+      return [];
     }
 
-    const data: NewsAPIResponse = await response.json();
+    const data: GuardianResponse = await response.json();
 
-    if (data.status !== 'ok' || !data.articles) {
-      console.error('NewsAPI returned error:', data);
-      return generateMockResults(query, persona);
+    if (data.response.status !== 'ok' || !data.response.results) {
+      console.error('Guardian API returned error:', data);
+      return [];
     }
 
-    // Convert NewsAPI articles to SearchResults
-    return data.articles.map((article) => ({
-      title: article.title,
-      url: article.url,
-      snippet: article.description || '',
-      source: article.source.name,
-      timestamp: new Date(article.publishedAt),
-      sentiment: calculateSentiment(article.title + ' ' + article.description, persona),
-      relevance_score: calculateRelevance(article.title + ' ' + article.description, query),
+    return data.response.results.map((article) => ({
+      title: article.webTitle,
+      url: article.webUrl,
+      snippet: article.fields?.trailText || article.fields?.bodyText?.substring(0, 300) || '',
+      source: 'The Guardian',
+      timestamp: new Date(article.webPublicationDate),
+      sentiment: calculateSentiment(article.webTitle + ' ' + article.fields?.trailText, persona),
+      relevance_score: calculateRelevance(article.webTitle + ' ' + article.fields?.trailText, query),
       platform: 'news' as const,
     }));
+  } catch (error) {
+    console.error('Error fetching Guardian news:', error);
+    return [];
+  }
+}
+
+// Fetch from Google News RSS (query-specific)
+async function fetchGoogleNewsRSS(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  try {
+    const encodedQuery = encodeURIComponent(query);
+    const feedUrl = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-US&gl=US&ceid=US:en`;
+
+    const feed = await rssParser.parseURL(feedUrl);
+
+    return feed.items.slice(0, 10).map((item) => ({
+      title: item.title || 'Untitled',
+      url: item.link || '',
+      snippet: item.contentSnippet || item.content?.substring(0, 300) || '',
+      source: 'Google News',
+      timestamp: item.pubDate ? new Date(item.pubDate) : new Date(),
+      sentiment: calculateSentiment(item.title + ' ' + item.contentSnippet, persona),
+      relevance_score: calculateRelevance(item.title + ' ' + item.contentSnippet, query),
+      platform: 'news' as const,
+    }));
+  } catch (error) {
+    console.error('Error fetching Google News RSS:', error);
+    return [];
+  }
+}
+
+// Hybrid news fetching strategy combining all sources
+async function fetchNewsForPersona(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  try {
+    // Fetch from all news sources in parallel
+    const [rssResults, guardianResults, googleNewsResults] = await Promise.all([
+      fetchRSSNews(query, persona),
+      fetchGuardianNews(query, persona),
+      fetchGoogleNewsRSS(query, persona),
+    ]);
+
+    // Combine all results
+    const allResults = [...rssResults, ...guardianResults, ...googleNewsResults];
+
+    // If no results found, return mock data
+    if (allResults.length === 0) {
+      console.log('No news results found from any source');
+      return generateMockResults(query, persona);
+    }
+
+    // Remove duplicates based on URL
+    const uniqueResults = allResults.filter((result, index, self) =>
+      index === self.findIndex((r) => r.url === result.url)
+    );
+
+    // Sort by relevance score
+    return uniqueResults.sort((a, b) => (b.relevance_score || 0) - (a.relevance_score || 0));
   } catch (error) {
     console.error('Error fetching news:', error);
     return generateMockResults(query, persona);
