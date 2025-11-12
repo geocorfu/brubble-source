@@ -5,12 +5,14 @@ Brubble helps you understand information bubbles and explore diverse perspective
 ## Features
 
 - **Multi-Perspective Search**: Compare search results across up to 3 different personas simultaneously
-- **Multi-Source Integration**: Aggregates content from 5 platforms:
-  - NewsAPI - Live news articles from thousands of sources
-  - YouTube - Video content from YouTube search
-  - Reddit - Community discussions and posts
-  - Twitter/X - Recent tweets and social media discourse
-  - Google Custom Search - General web search results
+- **Multi-Source Integration**: Aggregates content from 7 data sources:
+  - **RSS Feeds** - Free, persona-specific feeds from major outlets (NPR, Fox News, NYT, BBC, etc.)
+  - **The Guardian API** - Quality journalism with generous free tier (500 req/day)
+  - **Google News RSS** - Query-specific news aggregation, completely free
+  - **YouTube** - Video content from YouTube search
+  - **Reddit** - Community discussions and posts
+  - **Twitter/X** - Recent tweets and social media discourse
+  - **Google Custom Search** - General web search results
 - **Visual Analytics**: Interactive metrics panels showing echo chamber effects, sentiment analysis, and source diversity
 - **Smart Insights**: AI-generated insights highlighting information bubbles and perspective gaps
 - **Beautiful UI**: Modern, responsive interface built with Next.js 14 and Tailwind CSS
@@ -21,10 +23,10 @@ Brubble helps you understand information bubbles and explore diverse perspective
 
 - Node.js 18+ installed
 - npm or yarn package manager
-- **Required**: NewsAPI key (free tier available at https://newsapi.org/register)
+- **No API keys required** - The app works out-of-the-box with free RSS feeds!
 - **Optional** (for enhanced functionality):
+  - The Guardian API key - Free tier: 500 req/day (https://open-platform.theguardian.com/access/)
   - YouTube Data API v3 key (https://console.cloud.google.com/apis/credentials)
-  - Reddit API credentials (https://www.reddit.com/prefs/apps)
   - Twitter/X API Bearer Token (https://developer.twitter.com/en/portal/dashboard)
   - Google Custom Search API key + Search Engine ID (https://developers.google.com/custom-search/v1/overview)
 
@@ -40,26 +42,22 @@ Brubble helps you understand information bubbles and explore diverse perspective
    npm install
    ```
 
-3. **Set up environment variables**:
+3. **Set up environment variables (optional)**:
    ```bash
    cp .env.example .env.local
    ```
 
-   Edit `.env.local` and add your API keys:
+   The app works immediately with free RSS feeds and Google News RSS! Optionally add API keys for enhanced results:
    ```
-   # Required
-   NEWSAPI_KEY=your_actual_newsapi_key_here
-
    # Optional - add these for enhanced multi-source results
+   GUARDIAN_API_KEY=your_guardian_api_key
    YOUTUBE_API_KEY=your_youtube_api_key
-   REDDIT_CLIENT_ID=your_reddit_client_id
-   REDDIT_CLIENT_SECRET=your_reddit_client_secret
    TWITTER_BEARER_TOKEN=your_twitter_bearer_token
    GOOGLE_API_KEY=your_google_api_key
    GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
    ```
 
-   **Note**: The app will work with just NewsAPI. Additional sources are skipped if API keys are not provided.
+   **Note**: News works without any API keys! Other sources gracefully skip if API keys are not provided.
 
 4. **Run the development server**:
    ```bash
@@ -132,25 +130,40 @@ brubble/
 
 ## API Integration
 
-All data sources are now integrated and functional:
+### Hybrid News Strategy (No API Keys Required!)
 
-- **NewsAPI** (Required): Live news articles from thousands of sources
-  - Free tier: 100 requests/day, 1 month article history
-  - Get your key: https://newsapi.org/register
+Brubble uses a smart hybrid approach for news that works completely free:
 
-- **YouTube Data API v3** (Optional): Video content and metadata
+1. **RSS Feeds** (Primary) - Persona-specific news feeds:
+   - Progressive: The Guardian US, NPR, Democracy Now
+   - Conservative: Fox News, Wall Street Journal, NY Post
+   - Centrist: New York Times, BBC, Reuters
+   - Always free, no authentication required
+
+2. **Google News RSS** - Query-specific news aggregation:
+   - Completely free, no API key needed
+   - Real-time news from thousands of sources
+
+3. **The Guardian API** (Optional Enhancement):
+   - Free tier: 500 requests/day (vs NewsAPI's 100)
+   - High-quality journalism
+   - Get your key: https://open-platform.theguardian.com/access/
+
+### Other Data Sources (All Optional)
+
+- **YouTube Data API v3**: Video content and metadata
   - Free tier: 10,000 quota units/day (~100 searches)
   - Get your key: https://console.cloud.google.com/apis/credentials
 
-- **Reddit API** (Optional): Community discussions and posts
+- **Reddit API**: Community discussions and posts
   - Works without credentials (with rate limits) or create an app for higher limits
   - Create app: https://www.reddit.com/prefs/apps
 
-- **Twitter/X API v2** (Optional): Recent tweets (last 7 days)
+- **Twitter/X API v2**: Recent tweets (last 7 days)
   - Requires Essential access or higher (free tier available)
   - Get Bearer Token: https://developer.twitter.com/en/portal/dashboard
 
-- **Google Custom Search API** (Optional): General web search results
+- **Google Custom Search API**: General web search results
   - Free tier: 100 queries/day
   - Setup: https://developers.google.com/custom-search/v1/overview
   - Requires both API key and Search Engine ID
@@ -166,15 +179,13 @@ npm start
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `NEWSAPI_KEY` | NewsAPI authentication key | Yes |
+| `GUARDIAN_API_KEY` | The Guardian API key (500 req/day free) | No |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 key | No |
-| `REDDIT_CLIENT_ID` | Reddit app client ID | No |
-| `REDDIT_CLIENT_SECRET` | Reddit app client secret | No |
 | `TWITTER_BEARER_TOKEN` | Twitter/X API v2 bearer token | No |
 | `GOOGLE_API_KEY` | Google Custom Search API key | No |
 | `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search engine ID | No |
 
-**Note**: If optional API keys are not provided, those data sources will be gracefully skipped. The application requires at least the NewsAPI key to function.
+**Note**: All API keys are optional! The app works out-of-the-box with free RSS feeds and Google News RSS. Additional API keys enhance the experience with more data sources.
 
 ## Contributing
 
@@ -188,12 +199,15 @@ MIT License - feel free to use this project for learning and development.
 
 - Built with ❤️ to combat information bubbles
 - Data powered by:
-  - NewsAPI for real-time news articles
+  - Free RSS feeds from major news outlets (NPR, Fox News, NYT, BBC, Reuters, etc.)
+  - Google News RSS for query-specific aggregation
+  - The Guardian Open Platform for quality journalism
   - YouTube Data API for video content
   - Reddit for community discussions
   - Twitter/X API for social media discourse
   - Google Custom Search for web results
 - Icons by Lucide React
+- Special thanks to all news organizations providing free RSS feeds
 
 ## Support
 
