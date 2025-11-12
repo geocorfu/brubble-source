@@ -11,6 +11,24 @@ import {
 const NEWSAPI_KEY = process.env.NEWSAPI_KEY || 'demo';
 const NEWSAPI_BASE_URL = 'https://newsapi.org/v2';
 
+// YouTube Data API integration
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
+const YOUTUBE_BASE_URL = 'https://www.googleapis.com/youtube/v3';
+
+// Reddit API integration
+const REDDIT_CLIENT_ID = process.env.REDDIT_CLIENT_ID || '';
+const REDDIT_CLIENT_SECRET = process.env.REDDIT_CLIENT_SECRET || '';
+const REDDIT_BASE_URL = 'https://www.reddit.com';
+
+// Twitter/X API v2 integration
+const TWITTER_BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN || '';
+const TWITTER_BASE_URL = 'https://api.twitter.com/2';
+
+// Google Custom Search API integration
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+const GOOGLE_SEARCH_ENGINE_ID = process.env.GOOGLE_SEARCH_ENGINE_ID || '';
+const GOOGLE_BASE_URL = 'https://www.googleapis.com/customsearch/v1';
+
 interface NewsAPIArticle {
   title: string;
   description: string;
@@ -25,6 +43,84 @@ interface NewsAPIResponse {
   status: string;
   totalResults: number;
   articles: NewsAPIArticle[];
+}
+
+interface YouTubeVideo {
+  id: {
+    videoId: string;
+  };
+  snippet: {
+    title: string;
+    description: string;
+    channelTitle: string;
+    publishedAt: string;
+  };
+}
+
+interface YouTubeSearchResponse {
+  items: YouTubeVideo[];
+}
+
+interface RedditPost {
+  data: {
+    title: string;
+    selftext: string;
+    url: string;
+    permalink: string;
+    subreddit: string;
+    author: string;
+    created_utc: number;
+    score: number;
+    num_comments: number;
+  };
+}
+
+interface RedditSearchResponse {
+  data: {
+    children: RedditPost[];
+  };
+}
+
+interface TwitterTweet {
+  id: string;
+  text: string;
+  author_id: string;
+  created_at: string;
+  public_metrics?: {
+    retweet_count: number;
+    reply_count: number;
+    like_count: number;
+  };
+}
+
+interface TwitterUser {
+  id: string;
+  username: string;
+  name: string;
+}
+
+interface TwitterSearchResponse {
+  data?: TwitterTweet[];
+  includes?: {
+    users?: TwitterUser[];
+  };
+  meta?: {
+    result_count: number;
+  };
+}
+
+interface GoogleSearchItem {
+  title: string;
+  link: string;
+  snippet: string;
+  displayLink: string;
+}
+
+interface GoogleSearchResponse {
+  items?: GoogleSearchItem[];
+  searchInformation?: {
+    totalResults: string;
+  };
 }
 
 // Fetch news from NewsAPI
@@ -105,6 +201,351 @@ async function fetchNewsForPersona(
   } catch (error) {
     console.error('Error fetching news:', error);
     return generateMockResults(query, persona);
+  }
+}
+
+// Fetch YouTube videos based on persona
+async function fetchYouTubeForPersona(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  if (!YOUTUBE_API_KEY) {
+    console.log('YouTube API key not configured, skipping YouTube results');
+    return [];
+  }
+
+  try {
+    // Build query parameters based on persona attributes
+    let searchQuery = query;
+
+    // Adjust search based on persona
+    if (persona.category === 'political') {
+      if (persona.attributes.political_leaning === 'progressive') {
+        searchQuery += ' progressive perspective climate';
+      } else if (persona.attributes.political_leaning === 'conservative') {
+        searchQuery += ' conservative perspective traditional';
+      } else {
+        searchQuery += ' balanced analysis';
+      }
+    }
+
+    if (persona.category === 'generational') {
+      const age = persona.attributes.age;
+      if (age === '18-25') {
+        searchQuery += ' trending viral';
+      } else if (age === '26-40') {
+        searchQuery += ' explained analysis';
+      } else {
+        searchQuery += ' documentary history';
+      }
+    }
+
+    // Construct API URL
+    const params = new URLSearchParams({
+      part: 'snippet',
+      q: searchQuery,
+      key: YOUTUBE_API_KEY,
+      maxResults: '10',
+      type: 'video',
+      order: 'relevance',
+    });
+
+    const url = `${YOUTUBE_BASE_URL}/search?${params.toString()}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`YouTube API error: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data: YouTubeSearchResponse = await response.json();
+
+    if (!data.items || data.items.length === 0) {
+      console.log('No YouTube results found');
+      return [];
+    }
+
+    // Convert YouTube videos to SearchResults
+    return data.items
+      .filter((video) => video.id.videoId) // Filter out any items without videoId
+      .map((video) => ({
+        title: video.snippet.title,
+        url: `https://www.youtube.com/watch?v=${video.id.videoId}`,
+        snippet: video.snippet.description || '',
+        source: video.snippet.channelTitle,
+        timestamp: new Date(video.snippet.publishedAt),
+        sentiment: calculateSentiment(video.snippet.title + ' ' + video.snippet.description, persona),
+        relevance_score: calculateRelevance(video.snippet.title + ' ' + video.snippet.description, query),
+        platform: 'youtube' as const,
+      }));
+  } catch (error) {
+    console.error('Error fetching YouTube videos:', error);
+    return [];
+  }
+}
+
+// Fetch Reddit posts based on persona
+async function fetchRedditForPersona(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  try {
+    // Build query parameters based on persona attributes
+    let searchQuery = query;
+    let sort = 'relevance';
+    let time = 'all';
+
+    // Adjust search based on persona
+    if (persona.category === 'political') {
+      if (persona.attributes.political_leaning === 'progressive') {
+        searchQuery += ' subreddit:politics OR subreddit:progressive';
+      } else if (persona.attributes.political_leaning === 'conservative') {
+        searchQuery += ' subreddit:conservative OR subreddit:republican';
+      } else {
+        searchQuery += ' subreddit:neutralpolitics OR subreddit:moderatepolitics';
+      }
+    }
+
+    if (persona.category === 'generational') {
+      const age = persona.attributes.age;
+      if (age === '18-25') {
+        searchQuery += ' subreddit:genz';
+        sort = 'hot';
+      } else if (age === '26-40') {
+        searchQuery += ' subreddit:millennials';
+      } else {
+        searchQuery += ' subreddit:genx';
+      }
+    }
+
+    // Construct API URL - Reddit's JSON API doesn't require authentication for basic searches
+    const params = new URLSearchParams({
+      q: searchQuery,
+      limit: '10',
+      sort,
+      t: time,
+      type: 'link,self',
+    });
+
+    const url = `${REDDIT_BASE_URL}/search.json?${params.toString()}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Brubble/1.0',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Reddit API error: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data: RedditSearchResponse = await response.json();
+
+    if (!data.data || !data.data.children || data.data.children.length === 0) {
+      console.log('No Reddit results found');
+      return [];
+    }
+
+    // Convert Reddit posts to SearchResults
+    return data.data.children.map((post) => ({
+      title: post.data.title,
+      url: post.data.url.startsWith('http')
+        ? post.data.url
+        : `${REDDIT_BASE_URL}${post.data.permalink}`,
+      snippet: post.data.selftext ? post.data.selftext.substring(0, 300) : `Posted in r/${post.data.subreddit} by u/${post.data.author}. ${post.data.score} upvotes, ${post.data.num_comments} comments.`,
+      source: `r/${post.data.subreddit}`,
+      timestamp: new Date(post.data.created_utc * 1000),
+      sentiment: calculateSentiment(post.data.title + ' ' + post.data.selftext, persona),
+      relevance_score: calculateRelevance(post.data.title + ' ' + post.data.selftext, query),
+      platform: 'reddit' as const,
+    }));
+  } catch (error) {
+    console.error('Error fetching Reddit posts:', error);
+    return [];
+  }
+}
+
+// Fetch Twitter/X posts based on persona
+async function fetchTwitterForPersona(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  if (!TWITTER_BEARER_TOKEN) {
+    console.log('Twitter API bearer token not configured, skipping Twitter results');
+    return [];
+  }
+
+  try {
+    // Build query parameters based on persona attributes
+    let searchQuery = query;
+
+    // Adjust search based on persona
+    if (persona.category === 'political') {
+      if (persona.attributes.political_leaning === 'progressive') {
+        searchQuery += ' (climate OR equality OR justice) -is:retweet';
+      } else if (persona.attributes.political_leaning === 'conservative') {
+        searchQuery += ' (traditional OR security OR freedom) -is:retweet';
+      } else {
+        searchQuery += ' (policy OR analysis) -is:retweet';
+      }
+    } else {
+      searchQuery += ' -is:retweet'; // Exclude retweets for cleaner results
+    }
+
+    if (persona.category === 'generational') {
+      const age = persona.attributes.age;
+      if (age === '18-25') {
+        searchQuery += ' lang:en'; // Focus on trending topics
+      }
+    }
+
+    // Construct API URL
+    const params = new URLSearchParams({
+      query: searchQuery,
+      max_results: '10',
+      'tweet.fields': 'created_at,public_metrics,author_id',
+      'user.fields': 'username,name',
+      expansions: 'author_id',
+    });
+
+    const url = `${TWITTER_BASE_URL}/tweets/search/recent?${params.toString()}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${TWITTER_BEARER_TOKEN}`,
+        'User-Agent': 'Brubble/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Twitter API error: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data: TwitterSearchResponse = await response.json();
+
+    if (!data.data || data.data.length === 0) {
+      console.log('No Twitter results found');
+      return [];
+    }
+
+    // Create a map of author IDs to usernames
+    const userMap = new Map<string, TwitterUser>();
+    if (data.includes?.users) {
+      data.includes.users.forEach((user) => {
+        userMap.set(user.id, user);
+      });
+    }
+
+    // Convert Twitter tweets to SearchResults
+    return data.data.map((tweet) => {
+      const author = userMap.get(tweet.author_id);
+      const username = author ? `@${author.username}` : 'Twitter User';
+      const metrics = tweet.public_metrics;
+      const engagement = metrics
+        ? `${metrics.like_count} likes, ${metrics.retweet_count} retweets`
+        : '';
+
+      return {
+        title: tweet.text.substring(0, 100) + (tweet.text.length > 100 ? '...' : ''),
+        url: `https://twitter.com/i/web/status/${tweet.id}`,
+        snippet: tweet.text + (engagement ? ` | ${engagement}` : ''),
+        source: username,
+        timestamp: new Date(tweet.created_at),
+        sentiment: calculateSentiment(tweet.text, persona),
+        relevance_score: calculateRelevance(tweet.text, query),
+        platform: 'twitter' as const,
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching Twitter posts:', error);
+    return [];
+  }
+}
+
+// Fetch Google Custom Search results based on persona
+async function fetchGoogleForPersona(
+  query: string,
+  persona: Persona
+): Promise<SearchResult[]> {
+  if (!GOOGLE_API_KEY || !GOOGLE_SEARCH_ENGINE_ID) {
+    console.log('Google Custom Search API not fully configured, skipping Google results');
+    return [];
+  }
+
+  try {
+    // Build query parameters based on persona attributes
+    let searchQuery = query;
+
+    // Adjust search based on persona
+    if (persona.category === 'political') {
+      if (persona.attributes.political_leaning === 'progressive') {
+        searchQuery += ' progressive left-wing liberal';
+      } else if (persona.attributes.political_leaning === 'conservative') {
+        searchQuery += ' conservative right-wing traditional';
+      } else {
+        searchQuery += ' centrist moderate balanced';
+      }
+    }
+
+    if (persona.category === 'geographic') {
+      const location = persona.attributes.location;
+      if (location?.includes('US')) {
+        searchQuery += ' site:.us OR site:america';
+      } else if (location?.includes('Europe')) {
+        searchQuery += ' site:.eu OR site:europe';
+      }
+    }
+
+    // Construct API URL
+    const params = new URLSearchParams({
+      key: GOOGLE_API_KEY,
+      cx: GOOGLE_SEARCH_ENGINE_ID,
+      q: searchQuery,
+      num: '10',
+    });
+
+    const url = `${GOOGLE_BASE_URL}?${params.toString()}`;
+
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.error(`Google Custom Search API error: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data: GoogleSearchResponse = await response.json();
+
+    if (!data.items || data.items.length === 0) {
+      console.log('No Google search results found');
+      return [];
+    }
+
+    // Convert Google search results to SearchResults
+    return data.items.map((item) => ({
+      title: item.title,
+      url: item.link,
+      snippet: item.snippet,
+      source: item.displayLink,
+      timestamp: new Date(), // Google Custom Search doesn't provide publish date
+      sentiment: calculateSentiment(item.title + ' ' + item.snippet, persona),
+      relevance_score: calculateRelevance(item.title + ' ' + item.snippet, query),
+      platform: 'google' as const,
+    }));
+  } catch (error) {
+    console.error('Error fetching Google search results:', error);
+    return [];
   }
 }
 
@@ -311,15 +752,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch results for each persona
+    // Fetch results for each persona from multiple sources
     const personaResultsPromises = personas.map(async (persona) => {
-      const results = await fetchNewsForPersona(query, persona);
+      // Fetch from all available sources in parallel
+      const [newsResults, youtubeResults, redditResults, twitterResults, googleResults] = await Promise.all([
+        fetchNewsForPersona(query, persona),
+        fetchYouTubeForPersona(query, persona),
+        fetchRedditForPersona(query, persona),
+        fetchTwitterForPersona(query, persona),
+        fetchGoogleForPersona(query, persona),
+      ]);
+
+      // Combine all results
+      const results = [...newsResults, ...youtubeResults, ...redditResults, ...twitterResults, ...googleResults];
 
       // Calculate summary stats
       const uniqueSources = new Set(results.map((r) => r.source));
       const avgSentiment =
-        results.reduce((sum, r) => sum + (r.sentiment || 0), 0) /
-        results.length;
+        results.length > 0
+          ? results.reduce((sum, r) => sum + (r.sentiment || 0), 0) / results.length
+          : 0;
       const topSources = Array.from(uniqueSources).slice(0, 5);
 
       return {
