@@ -5,7 +5,12 @@ Brubble helps you understand information bubbles and explore diverse perspective
 ## Features
 
 - **Multi-Perspective Search**: Compare search results across up to 3 different personas simultaneously
-- **Real-Time News Integration**: Powered by NewsAPI for live news content
+- **Multi-Source Integration**: Aggregates content from 5 platforms:
+  - NewsAPI - Live news articles from thousands of sources
+  - YouTube - Video content from YouTube search
+  - Reddit - Community discussions and posts
+  - Twitter/X - Recent tweets and social media discourse
+  - Google Custom Search - General web search results
 - **Visual Analytics**: Interactive metrics panels showing echo chamber effects, sentiment analysis, and source diversity
 - **Smart Insights**: AI-generated insights highlighting information bubbles and perspective gaps
 - **Beautiful UI**: Modern, responsive interface built with Next.js 14 and Tailwind CSS
@@ -16,7 +21,12 @@ Brubble helps you understand information bubbles and explore diverse perspective
 
 - Node.js 18+ installed
 - npm or yarn package manager
-- NewsAPI key (free tier available at https://newsapi.org/register)
+- **Required**: NewsAPI key (free tier available at https://newsapi.org/register)
+- **Optional** (for enhanced functionality):
+  - YouTube Data API v3 key (https://console.cloud.google.com/apis/credentials)
+  - Reddit API credentials (https://www.reddit.com/prefs/apps)
+  - Twitter/X API Bearer Token (https://developer.twitter.com/en/portal/dashboard)
+  - Google Custom Search API key + Search Engine ID (https://developers.google.com/custom-search/v1/overview)
 
 ### Installation
 
@@ -35,10 +45,21 @@ Brubble helps you understand information bubbles and explore diverse perspective
    cp .env.example .env.local
    ```
 
-   Edit `.env.local` and add your NewsAPI key:
+   Edit `.env.local` and add your API keys:
    ```
+   # Required
    NEWSAPI_KEY=your_actual_newsapi_key_here
+
+   # Optional - add these for enhanced multi-source results
+   YOUTUBE_API_KEY=your_youtube_api_key
+   REDDIT_CLIENT_ID=your_reddit_client_id
+   REDDIT_CLIENT_SECRET=your_reddit_client_secret
+   TWITTER_BEARER_TOKEN=your_twitter_bearer_token
+   GOOGLE_API_KEY=your_google_api_key
+   GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
    ```
+
+   **Note**: The app will work with just NewsAPI. Additional sources are skipped if API keys are not provided.
 
 4. **Run the development server**:
    ```bash
@@ -111,14 +132,28 @@ brubble/
 
 ## API Integration
 
-Currently integrated:
-- **NewsAPI**: Live news articles from thousands of sources
+All data sources are now integrated and functional:
 
-Future integrations planned:
-- YouTube Search API
-- Reddit API
-- Twitter/X API
-- Google Custom Search API
+- **NewsAPI** (Required): Live news articles from thousands of sources
+  - Free tier: 100 requests/day, 1 month article history
+  - Get your key: https://newsapi.org/register
+
+- **YouTube Data API v3** (Optional): Video content and metadata
+  - Free tier: 10,000 quota units/day (~100 searches)
+  - Get your key: https://console.cloud.google.com/apis/credentials
+
+- **Reddit API** (Optional): Community discussions and posts
+  - Works without credentials (with rate limits) or create an app for higher limits
+  - Create app: https://www.reddit.com/prefs/apps
+
+- **Twitter/X API v2** (Optional): Recent tweets (last 7 days)
+  - Requires Essential access or higher (free tier available)
+  - Get Bearer Token: https://developer.twitter.com/en/portal/dashboard
+
+- **Google Custom Search API** (Optional): General web search results
+  - Free tier: 100 queries/day
+  - Setup: https://developers.google.com/custom-search/v1/overview
+  - Requires both API key and Search Engine ID
 
 ## Building for Production
 
@@ -132,6 +167,14 @@ npm start
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `NEWSAPI_KEY` | NewsAPI authentication key | Yes |
+| `YOUTUBE_API_KEY` | YouTube Data API v3 key | No |
+| `REDDIT_CLIENT_ID` | Reddit app client ID | No |
+| `REDDIT_CLIENT_SECRET` | Reddit app client secret | No |
+| `TWITTER_BEARER_TOKEN` | Twitter/X API v2 bearer token | No |
+| `GOOGLE_API_KEY` | Google Custom Search API key | No |
+| `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search engine ID | No |
+
+**Note**: If optional API keys are not provided, those data sources will be gracefully skipped. The application requires at least the NewsAPI key to function.
 
 ## Contributing
 
@@ -144,7 +187,12 @@ MIT License - feel free to use this project for learning and development.
 ## Acknowledgments
 
 - Built with ❤️ to combat information bubbles
-- Powered by NewsAPI for real-time news data
+- Data powered by:
+  - NewsAPI for real-time news articles
+  - YouTube Data API for video content
+  - Reddit for community discussions
+  - Twitter/X API for social media discourse
+  - Google Custom Search for web results
 - Icons by Lucide React
 
 ## Support
